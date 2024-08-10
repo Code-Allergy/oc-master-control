@@ -1,0 +1,22 @@
+[package]
+name = "site"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = {version = "0.7.5", features = ["ws", "json"]}
+axum-htmx = "0.6.0"
+dotenv = "0.15.0"
+http = "1.1.0"
+maud = { version = "0.26.0", features = ["axum"] }
+serde = "1.0.205"
+tokio = { version = "1.39.2", features = ["full"] }
+tower = "0.4.13"
+tower-http = { version = "0.5.2", features = ["fs", "trace", "timeout"] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+bytes = "1.7.1"
+rand = "0.8.5"
+serde_json = "1.0.122"
+anyhow = "1.0.86"
+diesel = { version="2.2.2", features = ["sqlite"] }
