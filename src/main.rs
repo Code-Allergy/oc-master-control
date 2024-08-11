@@ -5,13 +5,14 @@ mod schema;
 mod models;
 
 use std::env;
+use std::sync::Arc;
 use http::StatusCode;
 use std::time::Duration;
-use axum::{middleware, Router};
+use axum::{middleware, Extension, Router};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum_htmx::HxRequest;
-use diesel::{Connection, SqliteConnection};
+use diesel::{Connection};
 use maud::{DOCTYPE, html, Markup, PreEscaped, Render};
 use tokio::signal;
 use tower::ServiceBuilder;
@@ -23,7 +24,14 @@ use tower_http::services::{ServeDir, ServeFile};
 use crate::api::{create_api_key, generate_api_snippet, generate_auth_snippet, request_auth_snippet};
 use crate::auth::auth_router;
 use crate::hx_middleware::hx_response_middleware;
+use self::models::*;
+use diesel::prelude::*;
+use site::db;
+use crate::schema::clients::dsl::clients;
 
+struct State {
+    database: PgConnection,
+}
 
 // DATABASE SCHEMAS
 /*
@@ -60,17 +68,31 @@ use crate::hx_middleware::hx_response_middleware;
 
 #[tokio::main]
 async fn main() {
+    use crate::schema::clients;
     tracing_subscriber::fmt::init();
+    dotenv::dotenv().expect("Failed to load .env");
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    // let mut connection = PgConnection::establish(&database_url)
+    //     .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    // let state = Arc::new(State { database: connection});
+    let mut pool = Arc::new(db::establish_connection_pool(&database_url));
+    let mut connection = pool.get().expect("Failed to get connection to DB");
+
     let app = Router::new()
         .route("/", get(index))
+        .route("/clients", get(get_clients))
         .route("/stats", get(stats))
         .route("/settings", get(settings))
         // todo add route handler for api calls
-        .route("/api/new", get(generate_auth_snippet))
+        .route("/api/new", post(generate_auth_snippet))
+        .layer(Extension(pool))
         .nest("/auth", auth_router())
         .nest_service("/static", ServeDir::new("static"))
         .nest_service("/favicon.ico", ServeFile::new("favicon.ico"))
+        
         .fallback(page_not_found)
+        
         .layer((
             ServiceBuilder::new()
                 .layer(middleware::from_fn(hx_response_middleware))
@@ -80,13 +102,19 @@ async fn main() {
 
         ;
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    SqliteConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
+    let client = NewClient::new("test1", "32324443");
 
+
+    diesel::insert_into(clients::table)
+        .values(client)
+        .execute(&mut connection)
+        .expect("Error saving new client");
+
+    // let count = get_clients(&mut connection).await;
+    // println!("{}", count.len());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("Serving at localhost:3000!");
+    println!("Serving at 0.0.0.0:3000!");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -94,42 +122,37 @@ async fn main() {
 
 }
 
+async fn get_clients(Extension(pool): Extension<Arc<db::Pool>>) -> Result<Markup, ServerError> {
+    let mut conn = pool.get()?;
+    let received_clients = Client::get_all(&mut conn)?;
+    
+    
+    Ok(html!{
+        @for client in received_clients {
+            (MiniClient::from_client(client))
+        }
+        
+        
+    })
+}
 
-async fn index(HxRequest(hx_request): HxRequest) -> Markup {
+async fn index() -> Markup {
     html! {
         div class="container mx-auto px-4" {
             h1 .text-center {
                 "Hello world!"
             }
-            (client())
-            (client())
-            (client())
-            (client())
-            (client())
-            (client())
-            (client())
-            (client())
+
+            "Result: "
         }
 
 
     }
 }
 
-fn client() -> Markup {
-    html! {
-        .flex.border."p-2" {
-            .flex.flex-col."pr-4" {
-                img src="/favicon.ico" {}
-                p { "ONLINE" }
-            }
-            .flex.flex-col {
-                p.font-bold { "AE System L1" }
-                p."flex-1" { "Above crafting terminal" }
-                p { "Monitor AE activity and act as display" }
-            }
-        }
-    }
-}
+// fn client() -> Markup {
+// 
+// }
 
 // root page layout
 pub(crate) fn root(contents: PreEscaped<String>) -> String {
@@ -354,6 +377,12 @@ async fn settings() -> Markup {
         "Hello settings!!"
     }
 }
+
+// async fn get_clients(connection: &mut PgConnection) -> Vec<Client> {
+//     use self::schema::clients::dsl::*;
+//     let results = clients.select(Client::as_select()).load(connection);
+//     results.unwrap()
+// }
 
 
 
