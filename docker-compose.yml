@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: my_postgres
+    environment:
+      POSTGRES_DB: mydatabase
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    image: oc-master-control-app:latest
+    pull_policy: missing
+    #build:
+      #context: .
+      #dockerfile: Dockerfile
+    depends_on:
+      - postgres
+    command: sleep infinity
+    ports:
+      - "3000:3000"
+
+    environment:
+      DATABASE_URL: postgres://myuser:mypassword@postgres:5432/mydatabase
+    volumes:
+      - .:/workspace:cached
+
+volumes:
+  postgres_data:

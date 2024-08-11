@@ -1,0 +1,10 @@
+{
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "aliases": {
+    "cargo-watch":  "cargo watch -w src -x run",
+    "css": "npx tailwindcss -i ./src/style.css -o ./static/style.css --watch"
+  }
+}
