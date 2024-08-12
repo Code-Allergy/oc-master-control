@@ -16,7 +16,7 @@ services:
     pull_policy: missing
     #build:
       #context: .
-      #dockerfile: Dockerfile
+      #dockerfile: Dockerfile.devcontainer
     depends_on:
       - postgres
     command: sleep infinity
