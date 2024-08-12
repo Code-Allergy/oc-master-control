@@ -18,13 +18,13 @@
 #CMD ["/usr/bin/site"]
 
 # Stage 1: Build
-FROM ubuntu:latest as builder
+FROM rust:latest as builder
 
 # Install necessary packages and set up the build environment
 RUN apt update && apt install -y \
-    build-base \
-    postgresql-dev \
-    openssl-dev
+    build-essential \
+    libpq-dev \
+    libssl-dev
 
 # Create a new directory for the application
 WORKDIR /usr/src/app
@@ -36,14 +36,19 @@ COPY . .
 RUN cargo build --release
 
 # Stage 2: Runtime
-FROM ubuntu:latest
+FROM debian:bullseye-slim
 
 # Install necessary packages for the runtime environment
-RUN apt update && apt-get install -y \
-    libgcc \
-    libstdc++ \
-    postgresql-dev \
-    && rm -rf /var/lib/apt/lists/*
+# RUN apt update && apt-get install -y \
+#     libgcc \
+#     libstdc++ \
+#     postgresql-dev \
+    # && rm -rf /var/lib/apt/lists/*
+
+# Install runtime dependencies
+RUN apt update && apt install -y \
+    libpq5 \
+    libssl3
 
 # Create a directory for the application
 WORKDIR /usr/src/app
