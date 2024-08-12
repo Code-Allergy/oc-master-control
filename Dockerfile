@@ -21,7 +21,7 @@
 FROM debian:bullseye-slim as builder
 
 # Install necessary packages and set up the build environment
-RUN apt update && apt install \
+RUN apt update && apt install -y \
     build-base \
     postgresql-dev \
     openssl-dev
@@ -39,10 +39,11 @@ RUN cargo build --release
 FROM debian:bullseye-slim
 
 # Install necessary packages for the runtime environment
-RUN apt update && apt add --no-cache \
+RUN apt update && apt-get install -y \
     libgcc \
     libstdc++ \
-    postgresql-dev
+    postgresql-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a directory for the application
 WORKDIR /usr/src/app
