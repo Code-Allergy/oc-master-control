@@ -1,9 +1,14 @@
-use crate::schema::clients::{api_key, auth_key};
+use std::collections::VecDeque;
+use std::sync::Arc;
+use axum::extract::ws::{Message, WebSocket};
 use diesel::prelude::*;
+use futures_util::stream::{SplitSink, SplitStream};
 use maud::{html, Markup, Render};
-use time::{Date, PrimitiveDateTime};
+use time::{PrimitiveDateTime};
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
 
-#[derive(Queryable, Selectable, Identifiable)]
+#[derive(Queryable, Selectable, Identifiable, Clone)]
 #[diesel(table_name = crate::schema::clients)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Client {
@@ -19,6 +24,15 @@ pub struct Client {
     accessed_on: Option<PrimitiveDateTime>,
 }
 
+/// Unused in database, but used in appstate.
+pub struct ActiveClient {
+    pub sender: SplitSink<WebSocket, Message>,
+    pub client: Client,
+    pub message_queue: Arc<Mutex<VecDeque<Message>>>,
+    pub thread_handle: JoinHandle<()>
+}
+
+/// Unused in database, but used as small card size reference in rendering
 pub struct MiniClient {
     pub name: String,
     status: String,

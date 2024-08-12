@@ -1,15 +1,16 @@
-use axum::response::IntoResponse;
+use std::sync::Arc;
 use axum::routing::get;
-use axum::Router;
-use http::StatusCode;
+use axum::{Extension, Router};
 use maud::{html, Markup};
+use crate::AppState;
 
-pub fn auth_router() -> Router {
+pub fn auth_router(state: Extension<Arc<AppState>>) -> Router {
     Router::new()
         .route("/register", get(login))
         .route("/authorized", get(login))
         .route("/login", get(login))
         .route("/logout", get(login))
+        .layer(Extension(state))
 }
 
 async fn login() -> Markup {

@@ -22,3 +22,5 @@ anyhow = "1.0.86"
 diesel = { version="2.2.2", features = ["postgres", "time", "r2d2"] }
 time = "0.3.36"
 r2d2 = "0.8.10"
+thiserror = "1.0.63"
+futures-util = "0.3.30"

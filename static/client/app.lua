@@ -16,6 +16,10 @@ local WS_ADDRESS = "ws://192.168.1.124"
 local WS_PORT = 3000
 local WS_PATH = "/api/ws"
 
+
+-- pull off top of buffer (end), and insert at start
+local messageBuffer = {};
+
 -- starting point of execution
 function main()
     -- items = component.me_interface.getItemsInNetwork()
@@ -51,12 +55,17 @@ function main()
 
     ws:send("Hello, WebSocket!")
 
+
+    local handle_event = thread.create(event_thread, ws);
+    local handle_command = thread.create(command_thread, ws)
+
     -- Read incoming messages
     while true do
         local messageType, message, err = ws:readMessage()
         if err then return print('Websocket Error: ' .. err) end
         if messageType == WebSocket.MESSAGE_TYPES.TEXT then
-            print('Message Received: ' .. message)  
+            print('Message Received: ' .. message)
+            messageBuffer[#messageBuffer + 1] = message
         elseif messageType == WebSocket.MESSAGE_TYPES.PING then
             print('Ping')
             ws:pong(message)
@@ -64,48 +73,41 @@ function main()
             print('Pong')
         end
 
-        if event.pull(5) == 'interrupted' then return end
+        if event.pull(5) == 'interrupted' then
+            ws:close()
+            os.exit(1) 
+        end
     end
-
-
-    -- -- connect to ws, send in to network thread
-    -- local cl = ws.create(ws_callback, true)
-    -- cl:connect("192.168.1.124", 3000,"/api/ws")
-    -- -- connect
-    -- print("Connected!")
-    -- -- thread.create(network_thread, nil)
-    -- while true do
-    --     local ev = {event.pull()};
-    --     print(ev[1])
-    --     if ev[1] == "interrupted" then
-    --         cl:disconnect();
-    --         return;
-    --     elseif ev[1] == "touch" then
-    --         cl:send("HI");
-    --     end
-    -- end
 
     -- threads for network, ui, other sensors
     -- wait forever
+    thread.waitForAll({handle_event, handle_command})
 end
 
--- function ws_callback(event, var1)
---     print("Event "..event.." fired. Var1 = "..var1);
--- end
+function command_thread(ws_client)
+    while true do
+        if #messageBuffer > 0 then
+            -- process message
+        end
+        os.sleep(1)
+    end
+end
 
 
--- -- this needs to handle other events and delegate them to the other threads
--- function network_thread(ws_client)
---     while true do
---         local ev = {event.pull()};
---         if ev[1] == "interrupted" then
---             ws_client:disconnect();
---             return;
---         elseif ev[1] == "text" then
---             print(ev[2])
---         end
---     end
--- end
+-- this needs to handle other events and delegate them to the other threads
+function event_thread(ws_client)
+    while true do
+        local ev = {event.pull()};
+        print("event: "..ev[1])
+        if ev[1] == "interrupted" then
+            ws_client:disconnect();
+            return;
+        elseif ev[1] == "touch" then
+            ws_client:send("HELLO!");
+        end
+    end
+end
+
 
 function client_initialization()
     print("Create an authorization key and enter it here: ")

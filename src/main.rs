@@ -4,8 +4,8 @@ mod hx_middleware;
 mod models;
 mod schema;
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use self::models::*;
-use crate::api::request_auth_snippet;
 use crate::auth::auth_router;
 use crate::hx_middleware::hx_response_middleware;
 use crate::schema::clients::dsl::clients;
@@ -19,17 +19,24 @@ use http::StatusCode;
 use maud::{html, Markup, PreEscaped, Render, DOCTYPE};
 use site::db;
 use std::env;
+use std::iter::Map;
 use std::sync::Arc;
 use std::time::Duration;
+use axum::extract::ws::{Message, WebSocket};
+use futures_util::{SinkExt, StreamExt};
+use futures_util::stream::SplitStream;
+use thiserror::Error;
 use tokio::signal;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 use tower::ServiceBuilder;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::log::error;
+use site::db::Pool;
+use crate::api::request_auth_snippet;
 
-struct State {
-    database: PgConnection,
-}
+const HEARTBEAT_DELAY: u64 = 30;
 
 // DATABASE SCHEMAS
 /*
@@ -73,6 +80,12 @@ struct State {
 // websocket handler and command/control portion of website/client
 //
 
+pub struct AppState {
+    pub pool: Pool,
+    pub active_clients: Arc<Mutex<HashMap<i64, ActiveClient>>>
+}
+
+
 #[tokio::main]
 async fn main() {
     use crate::schema::clients;
@@ -80,38 +93,35 @@ async fn main() {
     dotenv::dotenv().expect("Failed to load .env");
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let mut pool = Arc::new(db::establish_connection_pool(&database_url));
-    let mut connection = pool.get()
-        .expect("Failed to get connection to DB");
+    let mut pool = db::establish_connection_pool(&database_url);
+
+    let mut state = Arc::new(AppState {
+        pool,
+        active_clients: Arc::new(Mutex::new(HashMap::new())),
+    });
 
     let app = Router::new()
         .route("/", get(index))
-        .route("/clients", get(get_clients))
+        .route("/clients", get(clients_page))
         .route("/stats", get(stats))
         .route("/settings", get(settings))
         // todo add route handler for api calls
-        .nest("/auth", auth_router())
-        .nest("/api", api::router(Extension(pool.clone())))
+        .nest("/auth", auth_router(Extension(state.clone())))
+        .nest("/api", api::router(Extension(state.clone())))
         .nest_service("/static", ServeDir::new("static"))
         .nest_service("/favicon.ico", ServeFile::new("favicon.ico"))
-        .layer(Extension(pool))
+        .layer(Extension(state.clone()))
         .fallback(page_not_found)
-        .layer((ServiceBuilder::new()
+        .layer(ServiceBuilder::new()
             .layer(middleware::from_fn(hx_response_middleware))
             .layer(TraceLayer::new_for_http())
-            .layer(TimeoutLayer::new(Duration::from_secs(10))),));
+            .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        );
 
-    let client = NewClient::new("test1", "32324443");
 
-    diesel::insert_into(clients::table)
-        .values(client)
-        .execute(&mut connection)
-        .expect("Error saving new client");
-
-    // let count = get_clients(&mut connection).await;
-    // println!("{}", count.len());
-
+    tokio::spawn(client_heartbeat(state));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+
     println!("Serving at 0.0.0.0:3000!");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -119,16 +129,57 @@ async fn main() {
         .unwrap();
 }
 
-async fn get_clients(Extension(pool): Extension<Arc<db::Pool>>) -> Result<Markup, ServerError> {
-    let mut conn = pool.get()?;
+async fn client_heartbeat(state: Arc<AppState>) {
+    let mut interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_DELAY));
+    loop {
+        interval.tick().await; // Wait for the 30-second interval
+        let mut all_active_clients = state.active_clients.lock().await;
+
+        let mut to_remove = HashSet::new();
+
+        for mut active_client in all_active_clients.values_mut() {
+            println!("Sent id");
+            let client_id = *active_client.client.id();
+            active_client.sender.send(Message::Ping(Vec::new())).await.unwrap_or_else(|_| {
+                to_remove.insert(client_id);
+            });
+        }
+
+        // // read all off stack
+        sleep(Duration::from_secs(3)).await;
+        'responded: for mut active_client in all_active_clients.values_mut() {
+            let mut message_queue = active_client.message_queue.lock().await;
+            println!("MSG: {}", message_queue.len());
+            let client_id = *active_client.client.id();
+            for _ in 0..message_queue.len() {
+                let message = message_queue.pop_front().unwrap();
+                if let Message::Pong(_) = message { continue 'responded; }
+                message_queue.push_back(message);
+            }
+
+            to_remove.insert(client_id);
+        }
+
+        for exited_client_id in to_remove {
+            let mut client = all_active_clients.remove(&exited_client_id).unwrap();
+            client.sender.close().await.expect("Failed to close socket from exited client");
+            client.thread_handle.await.unwrap()
+        };
+    }
+
+}
+
+
+
+
+async fn clients_page(Extension(state): Extension<Arc<AppState>>) -> Result<Markup, ServerError> {
+    let mut conn = state.pool.get()?;
     let received_clients = Client::get_all(&mut conn)?;
 
     Ok(html! {
         @for client in received_clients {
             (MiniClient::from_client(client))
         }
-
-
     })
 }
 
@@ -138,11 +189,8 @@ async fn index() -> Markup {
             h1 .text-center {
                 "Hello world!"
             }
-
             "Result: "
         }
-
-
     }
 }
 
@@ -336,6 +384,88 @@ async fn page_not_found() -> impl IntoResponse {
     )
 }
 
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Bad Request: {0}")]
+    BadRequest(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
+    #[error("Not Found: {0}")]
+    NotFound(String),
+
+    #[error("Internal Server Error: {0}")]
+    Internal(anyhow::Error),
+
+    #[error("Service Unavailable: {0}")]
+    ServiceUnavailable(String),
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        match self {
+            AppError::BadRequest(msg) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Bad Request: {}", msg),
+                )
+                    .into_response()
+            }
+            AppError::Unauthorized(msg) => {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    format!("Unauthorized: {}", msg),
+                )
+                    .into_response()
+            }
+            AppError::Forbidden(msg) => {
+                (
+                    StatusCode::FORBIDDEN,
+                    format!("Forbidden: {}", msg),
+                )
+                    .into_response()
+            }
+            AppError::NotFound(msg) => {
+                (
+                    StatusCode::NOT_FOUND,
+                    format!("Not Found: {}", msg),
+                )
+                    .into_response()
+            }
+            AppError::Internal(err) => {
+                error!("Internal error: {:?}", err);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Internal Server Error: {}", err),
+                )
+                    .into_response()
+            }
+            AppError::ServiceUnavailable(msg) => {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Service Unavailable: {}", msg),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+impl AppError {
+    // Helper function to create an Internal error from any anyhow::Error
+    pub fn internal<E>(err: E) -> Self
+    where
+        E: Into<anyhow::Error>
+    {
+        AppError::Internal(err.into())
+    }
+}
+
+
 // Make our own error that wraps `anyhow::Error`.
 struct ServerError(anyhow::Error);
 
@@ -370,9 +500,3 @@ async fn settings() -> Markup {
         "Hello settings!!"
     }
 }
-
-// async fn get_clients(connection: &mut PgConnection) -> Vec<Client> {
-//     use self::schema::clients::dsl::*;
-//     let results = clients.select(Client::as_select()).load(connection);
-//     results.unwrap()
-// }
