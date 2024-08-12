@@ -47,7 +47,7 @@ FROM debian:bullseye-slim
 
 # Install runtime dependencies
 RUN apt update && apt install -y \
-    libpq5 \
+    libpq5
 
 # Create a directory for the application
 WORKDIR /usr/src/app
