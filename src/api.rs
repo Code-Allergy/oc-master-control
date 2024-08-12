@@ -75,10 +75,15 @@ async fn websocket_handle(mut socket: WebSocket, client: Client, state: Arc<AppS
     state.active_clients.lock().await.insert(client_id, active);
 }
 
-async fn handle_client(id: i64, mut receiver: SplitStream<WebSocket>, message_queue: Arc<Mutex<VecDeque<Message>>>) {
+async fn handle_client(id: i64, mut receiver: SplitStream<WebSocket>, 
+                       message_queue: Arc<Mutex<VecDeque<Message>>>) {
     while let Some(message) = receiver.next().await {
+        println!("{:?}", message);
         match message {
             Ok(msg) => {
+                if let Message::Close(_) = msg {
+                    return; // when this closes, we can safely close the thread
+                }
                 let mut queue = message_queue.lock().await;
                 queue.push_back(msg);
             }

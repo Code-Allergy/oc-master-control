@@ -118,7 +118,6 @@ async fn main() {
             .layer(TimeoutLayer::new(Duration::from_secs(10)))
         );
 
-
     tokio::spawn(client_heartbeat(state));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
@@ -149,7 +148,6 @@ async fn client_heartbeat(state: Arc<AppState>) {
         sleep(Duration::from_secs(3)).await;
         'responded: for mut active_client in all_active_clients.values_mut() {
             let mut message_queue = active_client.message_queue.lock().await;
-            println!("MSG: {}", message_queue.len());
             let client_id = *active_client.client.id();
             for _ in 0..message_queue.len() {
                 let message = message_queue.pop_front().unwrap();
