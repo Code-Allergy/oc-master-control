@@ -1,6 +1,6 @@
 use axum::response::IntoResponse;
-use axum::Router;
 use axum::routing::get;
+use axum::Router;
 use http::StatusCode;
 use maud::{html, Markup};
 
@@ -17,7 +17,3 @@ async fn login() -> Markup {
         "Login here!"
     }
 }
-
-
-
-

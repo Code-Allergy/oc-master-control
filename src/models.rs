@@ -1,13 +1,13 @@
-use diesel::dsl::all;
+use crate::schema::clients::{api_key, auth_key};
 use diesel::prelude::*;
 use maud::{html, Markup, Render};
 use time::{Date, PrimitiveDateTime};
-use crate::schema::clients::dsl::clients;
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, Identifiable)]
 #[diesel(table_name = crate::schema::clients)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Client {
+    id: i64,
     pub name: String,
     status: String,
     description: Option<String>,
@@ -19,7 +19,7 @@ pub struct Client {
     accessed_on: Option<PrimitiveDateTime>,
 }
 
-pub struct MiniClient{
+pub struct MiniClient {
     pub name: String,
     status: String,
     description: Option<String>,
@@ -30,7 +30,7 @@ pub struct MiniClient{
 impl MiniClient {
     pub fn from_client(original: Client) -> Self {
         MiniClient {
-            name: original.name, 
+            name: original.name,
             status: original.status,
             description: original.description,
             location: original.location,
@@ -58,9 +58,34 @@ impl Render for MiniClient {
 }
 
 impl Client {
-    pub fn get_all(connection: &mut PgConnection) -> Result<Vec<Client>, anyhow::Error> {
+    pub fn get_all(connection: &mut PgConnection) -> Result<Vec<Self>, anyhow::Error> {
+        use crate::schema::clients::dsl::*;
         let all_clients = clients.select(Client::as_select()).load(connection)?;
         Ok(all_clients)
+    }
+
+    pub fn get_by_auth(
+        connection: &mut PgConnection,
+        auth_key_query: &str,
+    ) -> Result<Option<Self>, anyhow::Error> {
+        use crate::schema::clients::dsl::*;
+        let query: Client = clients
+            .filter(auth_key.eq(auth_key_query))
+            .first::<Client>(connection)?;
+
+        Ok(Some(query))
+    }
+
+    pub fn get_by_api(
+        connection: &mut PgConnection,
+        api_key_query: &str,
+    ) -> Result<Option<Self>, anyhow::Error> {
+        use crate::schema::clients::dsl::*;
+        let query: Client = clients
+            .filter(api_key.eq(api_key_query))
+            .first::<Client>(connection)?;
+
+        Ok(Some(query))
     }
 }
 
@@ -74,9 +99,12 @@ pub struct NewClient {
 }
 
 impl NewClient {
-    pub fn new(name: &str, auth_key: &str) -> NewClient {
+    pub fn new(name: &str, auth: &str) -> NewClient {
         NewClient {
-            name: name.to_string(), auth_key: auth_key.to_string(), status: "Authorized".to_string(), revoked: false,
+            name: name.to_string(),
+            auth_key: auth.to_string(),
+            status: "Authorized".to_string(),
+            revoked: false,
         }
     }
 }
@@ -84,5 +112,5 @@ impl NewClient {
 enum Status {
     Authorized,
     Enrolled,
-    Connected
+    Connected,
 }

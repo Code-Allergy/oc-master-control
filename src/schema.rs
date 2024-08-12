@@ -1,8 +1,7 @@
 // @generated automatically by Diesel CLI.
-
 diesel::table! {
     clients (id) {
-        id -> Int4,
+        id -> BigSerial,
         name -> Text,
         status -> Text,
         description -> Nullable<Text>,

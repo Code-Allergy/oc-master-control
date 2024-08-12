@@ -1,33 +1,31 @@
 mod api;
-mod hx_middleware;
 mod auth;
-mod schema;
+mod hx_middleware;
 mod models;
+mod schema;
 
-use std::env;
-use std::sync::Arc;
-use http::StatusCode;
-use std::time::Duration;
-use axum::{middleware, Extension, Router};
-use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum_htmx::HxRequest;
-use diesel::{Connection};
-use maud::{DOCTYPE, html, Markup, PreEscaped, Render};
-use tokio::signal;
-use tower::ServiceBuilder;
-use tower_http::{
-    trace::TraceLayer,
-    timeout::TimeoutLayer
-};
-use tower_http::services::{ServeDir, ServeFile};
-use crate::api::{create_api_key, generate_api_snippet, generate_auth_snippet, request_auth_snippet};
+use self::models::*;
+use crate::api::request_auth_snippet;
 use crate::auth::auth_router;
 use crate::hx_middleware::hx_response_middleware;
-use self::models::*;
-use diesel::prelude::*;
-use site::db;
 use crate::schema::clients::dsl::clients;
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{middleware, Extension, Router};
+use axum_htmx::HxRequest;
+use diesel::prelude::*;
+use diesel::Connection;
+use http::StatusCode;
+use maud::{html, Markup, PreEscaped, Render, DOCTYPE};
+use site::db;
+use std::env;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::signal;
+use tower::ServiceBuilder;
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
+use tracing::log::error;
 
 struct State {
     database: PgConnection,
@@ -35,36 +33,45 @@ struct State {
 
 // DATABASE SCHEMAS
 /*
-    clients {
-        authorization key
-        api key
-        time of enrollment
-        time of last response
-        name: string
-        status: status enum
-        revoked: boolean
-    }
+   clients {
+       id
+       user_id
+       authorization key
+       api key
+       time of enrollment
+       time of last response
+       name: string
+       status: status enum
+       revoked: boolean
+   }
 
-    ae_history {
+   ae_history {
 
-    }
+   }
 
-    power_history
+   power_history
 
-    .. other tables of history
+   .. other tables of history
 
 
-    status enum { (text in db)
-        Authorized
-        Enrolled
-        Connected
-    }
+   status enum { (text in db)
+       Authorized
+       Enrolled
+       Connected
+   }
 
-    * with this design, we save everything to database, then wipe the Authorized (unenrolled) keys
-    after some set period
+   * with this design, we save everything to database, then wipe the Authorized (unenrolled) keys
+   after some set period
 
- */
+*/
 
+// primary todos:
+//
+// working errors for other types, and possibly able to pass in error code in the text,
+// enum for main AppError, can have other type errors automatically translated and returned.
+
+// websocket handler and command/control portion of website/client
+//
 
 #[tokio::main]
 async fn main() {
@@ -73,11 +80,9 @@ async fn main() {
     dotenv::dotenv().expect("Failed to load .env");
 
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    // let mut connection = PgConnection::establish(&database_url)
-    //     .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
-    // let state = Arc::new(State { database: connection});
     let mut pool = Arc::new(db::establish_connection_pool(&database_url));
-    let mut connection = pool.get().expect("Failed to get connection to DB");
+    let mut connection = pool.get()
+        .expect("Failed to get connection to DB");
 
     let app = Router::new()
         .route("/", get(index))
@@ -85,25 +90,18 @@ async fn main() {
         .route("/stats", get(stats))
         .route("/settings", get(settings))
         // todo add route handler for api calls
-        .route("/api/new", post(generate_auth_snippet))
-        .layer(Extension(pool))
         .nest("/auth", auth_router())
+        .nest("/api", api::router(Extension(pool.clone())))
         .nest_service("/static", ServeDir::new("static"))
         .nest_service("/favicon.ico", ServeFile::new("favicon.ico"))
-        
+        .layer(Extension(pool))
         .fallback(page_not_found)
-        
-        .layer((
-            ServiceBuilder::new()
-                .layer(middleware::from_fn(hx_response_middleware))
-                .layer(TraceLayer::new_for_http())
-                .layer(TimeoutLayer::new(Duration::from_secs(10))),
-        ))
-
-        ;
+        .layer((ServiceBuilder::new()
+            .layer(middleware::from_fn(hx_response_middleware))
+            .layer(TraceLayer::new_for_http())
+            .layer(TimeoutLayer::new(Duration::from_secs(10))),));
 
     let client = NewClient::new("test1", "32324443");
-
 
     diesel::insert_into(clients::table)
         .values(client)
@@ -119,20 +117,18 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
-
 }
 
 async fn get_clients(Extension(pool): Extension<Arc<db::Pool>>) -> Result<Markup, ServerError> {
     let mut conn = pool.get()?;
     let received_clients = Client::get_all(&mut conn)?;
-    
-    
-    Ok(html!{
+
+    Ok(html! {
         @for client in received_clients {
             (MiniClient::from_client(client))
         }
-        
-        
+
+
     })
 }
 
@@ -151,7 +147,7 @@ async fn index() -> Markup {
 }
 
 // fn client() -> Markup {
-// 
+//
 // }
 
 // root page layout
@@ -180,12 +176,15 @@ pub fn head() -> Markup {
 }
 pub fn footer() -> Markup {
     html! {
-            script src="https://unpkg.com/htmx.org@1.9.12" {}
-            script src="/static/script.js" {}
-        }
+        script src="https://unpkg.com/htmx.org@1.9.12" {}
+        script src="/static/script.js" {}
+    }
 }
 pub(crate) fn navbar() -> Markup {
-    assert!(!&BUTTONS.is_empty(), "Navigation bar should have buttons (none were loaded from nav_buttons())");
+    assert!(
+        !&BUTTONS.is_empty(),
+        "Navigation bar should have buttons (none were loaded from nav_buttons())"
+    );
 
     let last_button = &BUTTONS.last().unwrap();
     html! {
@@ -245,7 +244,9 @@ pub(crate) fn navbar() -> Markup {
                 }
             }
         }
-        (Modal::new("request_authorization_modal", "Generate a new authorization key:", request_auth_snippet()))
+        (Modal::new("request_authorization_modal",
+            "Generate a new authorization key:",
+            request_auth_snippet()))
     }
 }
 
@@ -257,9 +258,7 @@ struct Modal {
 
 impl Modal {
     pub fn new(id: &'static str, title: &'static str, body: Markup) -> Modal {
-        Modal {
-            id, title, body
-        }
+        Modal { id, title, body }
     }
 }
 
@@ -280,7 +279,6 @@ impl Render for Modal {
     }
 }
 
-
 pub struct Link {
     pub(crate) name: &'static str,
     pub(crate) url: &'static str,
@@ -300,10 +298,9 @@ pub static BUTTONS: [Link; 5] = [
     Link::new("Statistics", "/stats"),
 ];
 
-
 pub static DROPDOWN_BUTTONS: [Link; 2] = [
     Link::new("Unknown", "/seals"),
-    Link::new("Settings", "/settings")
+    Link::new("Settings", "/settings"),
 ];
 
 async fn shutdown_signal() {
@@ -330,19 +327,14 @@ async fn shutdown_signal() {
     }
 }
 
-
-
-
 async fn page_not_found() -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,
         html! {
             "The following page was not found!"
-        }
+        },
     )
 }
-
-
 
 // Make our own error that wraps `anyhow::Error`.
 struct ServerError(anyhow::Error);
@@ -350,6 +342,7 @@ struct ServerError(anyhow::Error);
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
+        error!("Server error: {}", self.0);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Something went wrong: {}", self.0),
@@ -383,6 +376,3 @@ async fn settings() -> Markup {
 //     let results = clients.select(Client::as_select()).load(connection);
 //     results.unwrap()
 // }
-
-
-
