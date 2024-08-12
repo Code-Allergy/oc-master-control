@@ -48,7 +48,6 @@ FROM debian:bullseye-slim
 # Install runtime dependencies
 RUN apt update && apt install -y \
     libpq5 \
-    libssl3
 
 # Create a directory for the application
 WORKDIR /usr/src/app
