@@ -18,7 +18,7 @@
 #CMD ["/usr/bin/site"]
 
 # Stage 1: Build
-FROM debian:bullseye-slim as builder
+FROM debian:latest as builder
 
 # Install necessary packages and set up the build environment
 RUN apt update && apt install -y \
@@ -36,7 +36,7 @@ COPY . .
 RUN cargo build --release
 
 # Stage 2: Runtime
-FROM debian:bullseye-slim
+FROM debian:latest
 
 # Install necessary packages for the runtime environment
 RUN apt update && apt-get install -y \
