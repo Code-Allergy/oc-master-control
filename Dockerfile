@@ -21,7 +21,7 @@
 FROM debian:bullseye-slim as builder
 
 # Install necessary packages and set up the build environment
-RUN apt update && apk apt --no-cache \
+RUN apt update && apt install \
     build-base \
     postgresql-dev \
     openssl-dev
