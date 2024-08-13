@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use crate::models::{ActiveClient, Client, NewClient};
-use crate::{AppState, ServerError};
+use crate::database::models::{ActiveClient, Client, NewClient};
+use crate::{AppState};
 use anyhow::anyhow;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::WebSocketUpgrade;
@@ -18,6 +18,7 @@ use serde_json::Value;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use futures_util::{stream::{StreamExt, SplitStream}};
 use tokio::sync::Mutex;
+use crate::error::ServerError;
 
 const KEY_LENGTH: usize = 48;
 const AUTHORIZATION_KEY_LENGTH: usize = 8;
@@ -147,7 +148,7 @@ pub async fn generate_auth_snippet(
     Extension(state): Extension<Arc<AppState>>,
     Form(data): Form<AuthFormData>,
 ) -> Result<Markup, ServerError> {
-    use crate::schema::clients;
+    use crate::database::schema::clients;
 
     let mut connection = state.pool.get()?;
     let auth_key = create_api_key(AUTHORIZATION_KEY_LENGTH);
@@ -169,7 +170,7 @@ pub async fn generate_api_snippet(
     Extension(state): Extension<Arc<AppState>>,
     Json(payload): Json<Value>,
 ) -> Result<Response, ServerError> {
-    use crate::schema::clients::dsl::*;
+    use crate::database::schema::clients::dsl::*;
 
     let mut conn = state.pool.get()?;
     let auth = payload

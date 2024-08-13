@@ -1,22 +1,3 @@
-        
-# Base image with Rust
-#FROM rust:latest as builder
-# Set the working directory
-#WORKDIR /app
-#COPY . .
-#RUN cargo build --release
-
-# stage 2
-
-#FROM rust:latest
-#RUN apt-get update && apt-get install libpq-dev -y
-
-#WORKDIR /app
-#COPY --from=builder /app/target/release/site /usr/bin/site
-#COPY --from=builder /app/static .
-
-#CMD ["/usr/bin/site"]
-
 # Stage 1: Build
 FROM rust:latest as builder
 
@@ -37,13 +18,6 @@ RUN cargo build --release
 
 # Stage 2: Runtime
 FROM debian:bullseye-slim
-
-# Install necessary packages for the runtime environment
-# RUN apt update && apt-get install -y \
-#     libgcc \
-#     libstdc++ \
-#     postgresql-dev \
-    # && rm -rf /var/lib/apt/lists/*
 
 # Install runtime dependencies
 RUN apt update && apt install -y \
