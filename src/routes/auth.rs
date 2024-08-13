@@ -4,7 +4,7 @@ use axum::{Extension, Router};
 use maud::{html, Markup};
 use crate::AppState;
 
-pub fn auth_router(state: Extension<Arc<AppState>>) -> Router {
+pub fn router(state: Extension<Arc<AppState>>) -> Router {
     Router::new()
         .route("/register", get(login))
         .route("/authorized", get(login))

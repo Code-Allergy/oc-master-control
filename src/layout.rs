@@ -1,7 +1,7 @@
 use maud::{html, Markup, PreEscaped, Render, DOCTYPE};
 use crate::routes::api::request_auth_snippet;
 
-// root page layout
+/// Root page layout
 pub fn root(contents: PreEscaped<String>) -> String {
     let html_res = html! {
         (head())
@@ -14,6 +14,8 @@ pub fn root(contents: PreEscaped<String>) -> String {
 
     html_res.into_string()
 }
+
+/// Page <head> tag
 pub fn head() -> Markup {
     html! {
             (DOCTYPE)
@@ -25,12 +27,16 @@ pub fn head() -> Markup {
             }
     }
 }
+
+/// Page <footer> tag
 pub fn footer() -> Markup {
     html! {
         script src="https://unpkg.com/htmx.org@1.9.12" {}
         script src="/static/script.js" {}
     }
 }
+
+/// Navbar rendered on every page at top of body tag
 pub(crate) fn navbar() -> Markup {
     assert!(
         !&BUTTONS.is_empty(),
@@ -67,7 +73,8 @@ pub(crate) fn navbar() -> Markup {
             }
 
             div ."flex items-stretch" {
-                button class="btn btn-info rounded-btn" onclick={"request_authorization_modal.showModal()"} { "+" }
+                button class="btn btn-info rounded-btn" 
+                    onclick={"request_authorization_modal.showModal()"} { "+" }
                 div ."dropdown dropdown-end" {
                     div tabindex="0" role="button" class="btn btn-ghost rounded-btn" {
                         svg
@@ -95,6 +102,7 @@ pub(crate) fn navbar() -> Markup {
                 }
             }
         }
+        // TODO we should be using htmx based modals
         (Modal::new("request_authorization_modal",
             "Generate a new authorization key:",
             request_auth_snippet()))
