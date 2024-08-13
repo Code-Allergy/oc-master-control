@@ -1,14 +1,14 @@
-local term = require("term")
-local string = require("string")
-local component = require("component")
-local WebSocket = require("./ws")
-local event = require("event")
-local internet = require("internet")
-local filesystem = require("filesystem")
-local thread = require("thread")
-local os = require("os")
-local colors = require("colors")
-local RUi = require("rui")
+local term = require("term");
+local string = require("string");
+local component = require("component");
+local WebSocket = require("./ws");
+local event = require("event");
+local internet = require("internet");
+local filesystem = require("filesystem");
+local thread = require("thread");
+local os = require("os");
+local colors = require("colors");
+local RUi = require("rui");
 
 
 local gpu = component.gpu;
@@ -64,11 +64,19 @@ function main()
         os.exit(1)
     end)
 
-    local handle_event = thread.create(event_thread, ws);
+    -- local handle_event = thread.create(event_thread, ws);
     local handle_command = thread.create(command_thread, ws);
     -- local handle_ui = thread.create(ui_thread);
 
-    RUi.new();
+    local rui = RUi.new();
+    
+    -- rui:square(10, 10, 5, 0x03e3fc)
+    -- rui:square(15, 15, 5, 0x03e3fc)
+    -- rui:clear();
+    local button1 = rui:button("test", 40, 40, rui.BUTTON_SIZES.SMALL, (function() ws:send("Hello world!") end))
+    -- local button1 = rui:button("ok", 25, 30, nil, rui.BUTTON_SIZES.NORMAL)
+    -- local button1 = rui:button("ok", 25, 35, nil, rui.BUTTON_SIZES.LONG)
+    -- local button1 = rui:button("ok", 25, 40, nil, rui.BUTTON_SIZES.XLONG)
 
     -- Read incoming messages
     while true do
@@ -86,7 +94,7 @@ function main()
         os.sleep(1)
     end
 
-    thread.waitForAll({handle_event, handle_command, handle_ui})
+    thread.waitForAll({handle_command, handle_ui})
 end
 
 function command_thread(ws_client)
@@ -100,14 +108,14 @@ end
 
 
 --this needs to handle other events and delegate them to the other threads
-function event_thread(ws_client)
-    while running do
-        local ev = { event.pull() };
-        if ev[1] == "touch" then
-            ws_client:send("HELLO!");
-        end
-    end
-end
+-- function event_thread(ws_client)
+--     while running do
+--         local ev = { event.pull() };
+--         if ev[1] == "touch" then
+--             ws_client:send("HELLO!");
+--         end
+--     end
+-- end
 
 function ui_thread()
     while running do
