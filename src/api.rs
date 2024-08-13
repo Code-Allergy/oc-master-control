@@ -16,13 +16,43 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::Value;
 use time::{OffsetDateTime, PrimitiveDateTime};
-use futures_util::{stream::{StreamExt, SplitSink, SplitStream}};
+use futures_util::{stream::{StreamExt, SplitStream}};
 use tokio::sync::Mutex;
 
 const KEY_LENGTH: usize = 48;
 const AUTHORIZATION_KEY_LENGTH: usize = 8;
 // client sends auth key as json with key named key
 // server sends back either a key with key key or an error with key error
+
+
+// commands issued BY the server, directed at one or many clients
+pub enum ServerWSCommand {
+    Update, About, Response,
+}
+
+impl ServerWSCommand {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ServerWSCommand::Update => "Update",
+            ServerWSCommand::About => "About",
+            ServerWSCommand::Response => "Response",
+        }
+    }
+}
+
+// commands issued by the client, directed at the server
+pub enum ClientWSCommand {
+    Response, Discord,
+}
+
+impl ClientWSCommand {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ClientWSCommand::Response => "Response",
+            ClientWSCommand::Discord => "Discord",
+        }
+    }
+}
 
 pub fn router(state: Extension<Arc<AppState>>) -> Router {
     Router::new()

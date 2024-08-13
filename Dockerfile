@@ -1,4 +1,4 @@
-
+        
 # Base image with Rust
 #FROM rust:latest as builder
 # Set the working directory
@@ -59,7 +59,7 @@ COPY --from=builder /usr/src/app/target/release/site /usr/src/app/
 ENTRYPOINT ["/usr/src/app/site"]
 
 # Optionally, expose ports or add any other configuration
-# EXPOSE 3000
+EXPOSE 3000
 
 # Run the application
 CMD ["site"]

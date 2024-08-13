@@ -1,4 +1,5 @@
-updater.lua 0.04
-app.lua 0.01
-rui.lua 0.01
-ws.lua 0.01
+usr/bin/updater.lua 0.04
+usr/bin/app.lua 0.01
+usr/lib/rui.lua 0.01
+usr/lib/ws.lua 0.01
+usr/lib/commands.lua 0.01

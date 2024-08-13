@@ -11,7 +11,7 @@ use crate::hx_middleware::hx_response_middleware;
 use crate::schema::clients::dsl::clients;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{middleware, Extension, Router};
+use axum::{middleware, Extension, Form, Router};
 use axum_htmx::HxRequest;
 use diesel::prelude::*;
 use diesel::Connection;
@@ -25,6 +25,7 @@ use std::time::Duration;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitStream;
+use serde::Deserialize;
 use thiserror::Error;
 use tokio::signal;
 use tokio::sync::Mutex;
@@ -88,7 +89,6 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
-    use crate::schema::clients;
     tracing_subscriber::fmt::init();
     dotenv::dotenv().expect("Failed to load .env");
 
@@ -103,6 +103,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/clients", get(clients_page))
+        .route("/clients/broadcast", post(clients_broadcast))
         .route("/stats", get(stats))
         .route("/settings", get(settings))
         // todo add route handler for api calls
@@ -128,6 +129,15 @@ async fn main() {
         .unwrap();
 }
 
+async fn ws_broadcast(receiving_clients: &mut HashMap<i64, ActiveClient>, 
+                      message: Message) -> Result<(), ServerError> {
+    for client in receiving_clients.values_mut() {
+        let message = message.clone();
+        client.sender.send(message).await?;
+    }
+    Ok(())
+}
+
 async fn client_heartbeat(state: Arc<AppState>) {
     let mut interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_DELAY));
     loop {
@@ -135,8 +145,7 @@ async fn client_heartbeat(state: Arc<AppState>) {
         let mut all_active_clients = state.active_clients.lock().await;
 
         let mut to_remove = HashSet::new();
-
-        for mut active_client in all_active_clients.values_mut() {
+     for active_client in all_active_clients.values_mut() {
             println!("Sent id");
             let client_id = *active_client.client.id();
             active_client.sender.send(Message::Ping(Vec::new())).await.unwrap_or_else(|_| {
@@ -154,7 +163,6 @@ async fn client_heartbeat(state: Arc<AppState>) {
                 if let Message::Pong(_) = message { continue 'responded; }
                 message_queue.push_back(message);
             }
-
             to_remove.insert(client_id);
         }
 
@@ -164,7 +172,6 @@ async fn client_heartbeat(state: Arc<AppState>) {
             client.thread_handle.await.unwrap()
         };
     }
-
 }
 
 
@@ -175,10 +182,25 @@ async fn clients_page(Extension(state): Extension<Arc<AppState>>) -> Result<Mark
     let received_clients = Client::get_all(&mut conn)?;
 
     Ok(html! {
+        form hx-post="/clients/broadcast" hx-target="#broadcast-response" {
+            input type="text" placeholder="Query" name="query" 
+                class="input input-bordered w-full max-w-xs";
+        }
+        #broadcast-response {}
         @for client in received_clients {
             (MiniClient::from_client(client))
         }
     })
+}
+
+#[derive(Deserialize)]
+struct BroadcastForm {
+    query: String,
+}
+
+async fn clients_broadcast(Extension(state): Extension<Arc<AppState>>, Form(data): Form<BroadcastForm>) {
+    let mut all_clients= state.active_clients.lock().await;
+    ws_broadcast(&mut all_clients, Message::Text(data.query)).await.expect("Failed broadcast!");
 }
 
 async fn index() -> Markup {
@@ -465,6 +487,7 @@ impl AppError {
 
 
 // Make our own error that wraps `anyhow::Error`.
+#[derive(Debug)]
 struct ServerError(anyhow::Error);
 
 // Tell axum how to convert `AppError` into a response.
