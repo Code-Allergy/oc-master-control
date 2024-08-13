@@ -9,10 +9,10 @@ end
 -- execute update script and download new files from server
 local function cmd_update()
     print("Launching updater");
-    os.execute("updater")
+    os.execute("updater");
     print("Throwing an interruption before rebooting for update.");
-    event.push("interrupted")
-    os.execute("reboot")
+    event.push("interrupted");
+    os.execute("reboot");
 end
 
 -- response to a previous command issued. Second token contains the name of original command

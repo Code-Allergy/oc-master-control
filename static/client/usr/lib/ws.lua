@@ -299,6 +299,12 @@ function WebSocket:readWebSocketFrame()
 	}
 end
 
+function WebSocket:print(...)
+	local args = {...};
+	local combined = table.concat(args, " ")
+	self:send("Log " .. combined);
+end
+
 ---@return string
 function WebSocket:createWebSocketFrame(frameOptions)
 	local fin = true

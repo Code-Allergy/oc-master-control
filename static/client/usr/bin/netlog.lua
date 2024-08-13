@@ -1,3 +1,5 @@
+-- EDIT thos to use normal requests instead.
+
 local WebSocket = require("ws");
 local filesystem = require("filesystem");
 local event = require("event");
@@ -23,6 +25,8 @@ end)
 
 -- setup connection to websocket setver
 -- todo move this all to thread fn
+
+::reconnect::
 ws = WebSocket.new({
     address = WS_ADDRESS,
     port = WS_PORT,
@@ -33,11 +37,21 @@ ws = WebSocket.new({
 while true do
     local connected, err = ws:finishConnect()
     if connected then break end
-    if err then return print('Failed to connect: ' .. err) end
+    if err then
+        print("Could not connect! Reconnecting in 30 seconds!");
+        ws:close();
+        os.sleep(30);
+        goto reconnect;
+    end
     os.sleep(1);
 end
 
 while true do
+    if not ws:isOpen() then
+        print("Connection closed! Reconnecting!");
+        ws:close()
+        goto reconnect;
+    end
     local data_read = io.read("*l");
     ws:send("Log " .. tostring(data_read));   
 end

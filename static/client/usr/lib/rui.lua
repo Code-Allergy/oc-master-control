@@ -1,7 +1,4 @@
 -- rui
-
-
-
 local component = require("component");
 local event = require("event");
 local term = require("term");
@@ -12,7 +9,6 @@ local gpu = component.gpu;
 
 local term_colours = {};
 local popped_colours = {};
-
 
 
 -- color constants
@@ -58,7 +54,6 @@ RUi.TEXTFIELD_SIZES = {
 }
 
 
-
 --------------------------------------------------- INIT / CLEANUP ----------------------------------------------------
 function RUi.new()
     local Ui = {}
@@ -70,21 +65,22 @@ function RUi.new()
     }
     Ui.clicked = false;
     Ui.resolution = {gpu.getResolution()};
-    Ui.selected_field = nil;
+    Ui.selected_field = nil; -- set to the currently seleted textfield/textarea (if there is one)
     
     Ui.display_buffer = gpu.allocateBuffer(Ui.resolution[1], Ui.resolution[2])
     -- enroll touch listener
-    Ui.touch_listener = event.listen("touch", function(...) Ui:touch_handler(...) end);
-    -- enroll key listener
-    Ui.key_release_listener = event.listen("key_up", function(...) Ui:key_handler(...) end);
-    Ui.key_press_listener = event.listen("key_down", function(...) Ui:key_handler(...) end);
-
-    -- enroll draw loop
-    Ui.render_timer = event.timer(0.02, function() Ui:render_once() end, math.huge);
+    
+    Ui.event_timers = {
+        render = event.timer(0.2, function() Ui:render_once() end, math.huge);
+    }
+    
+    Ui.event_listeners = {
+        touch = event.listen("touch", function(...) Ui:touch_handler(...) end);
+        key_down = event.listen("key_down", function(...) Ui:key_handler(...) end);
+        key_up = event.listen("key_up", function(...) Ui:key_handler(...) end);
+    }
 
     Ui.pressed_keys = {};
-
-    -- todo reorder this into maps of event listeners and event timers, so we can end program easier.
 
     Ui:push_colour(term_colours);
     gpu.setActiveBuffer(Ui.display_buffer)
@@ -100,10 +96,14 @@ end
 -- not leaving computer in unworking state.
 function RUi:cleanup()
     self:pop_colour(term_colours);
-    event.cancel(self.touch_listener);
-    event.cancel(self.key_press_listener);
-    event.cancel(self.key_release_listener);
-    event.cancel(self.render_timer);
+    for _, listener in self.event_listeners do
+        event.ignore(listener);
+    end
+
+    for _, timer in self.event_timers do
+        event.cancel(timer);
+    end
+
     gpu.setActiveBuffer(0)
 end
 
