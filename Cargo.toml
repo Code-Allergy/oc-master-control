@@ -25,3 +25,6 @@ r2d2 = "0.8.10"
 thiserror = "1.0.63"
 futures-util = "0.3.30"
 phf = { version = "0.11.2", features = ["macros"] }
+reqwest = "0.12.5"
+tower-serve-static = "0.1.1"
+include_dir = "0.7.4"

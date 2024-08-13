@@ -9,7 +9,9 @@ use maud::{html, Markup, PreEscaped};
 use axum::routing::get;
 use http::header::CONTENT_LENGTH;
 use tower::ServiceBuilder;
-use tower_http::services::{ServeDir, ServeFile};
+use include_dir::{Dir, include_dir};
+use tower_serve_static::{include_file, ServeDir, ServeFile};
+
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use crate::AppState;
@@ -21,8 +23,11 @@ pub mod stats;
 pub mod auth;
 pub mod client_routes;
 
+static ASSETS_DIR: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/static");
+
 
 pub fn router(state: Arc<AppState>) -> Router {
+    
     Router::new()
         /*  simple routes  */
         .route("/", get(index))
@@ -35,8 +40,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest("/stats", stats::router(Extension(state.clone())))
 
         /*  Nested services  */
-        .nest_service("/static", ServeDir::new("static"))
-        .nest_service("/favicon.ico", ServeFile::new("favicon.ico"))
+        .nest_service("/static", ServeDir::new(&ASSETS_DIR))
+        .nest_service("/favicon.ico", ServeFile::new(include_file!("/favicon.ico")))
         .fallback(page_not_found)
         .layer(ServiceBuilder::new()
             .layer(Extension(state.clone()))
