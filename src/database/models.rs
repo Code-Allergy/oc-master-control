@@ -123,6 +123,13 @@ impl NewClient {
     }
 }
 
+#[derive(Insertable)]
+#[diesel(table_name = crate::database::schema::client_logs)]
+pub struct NewClientLog {
+    pub(crate) client_id: i64,
+    pub(crate) log_message: String,
+}
+
 enum Status {
     Authorized,
     Enrolled,

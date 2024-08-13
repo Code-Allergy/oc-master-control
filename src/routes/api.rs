@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
+use std::ops::Deref;
 use std::sync::Arc;
-use crate::database::models::{ActiveClient, Client, NewClient};
+use crate::database::models::{ActiveClient, Client, NewClient, NewClientLog};
 use crate::{AppState};
 use anyhow::anyhow;
 use axum::extract::ws::{Message, WebSocket};
@@ -17,7 +18,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use futures_util::{stream::{StreamExt, SplitStream}};
+use phf::phf_map;
 use tokio::sync::Mutex;
+use crate::database::schema::client_logs::dsl::client_logs;
 use crate::error::ServerError;
 
 const KEY_LENGTH: usize = 48;
@@ -31,7 +34,22 @@ pub enum ServerWSCommand {
     Update, About, Response,
 }
 
+static SERVER_WS_COMMAND_STRINGS: phf::Map<&'static str, ServerWSCommand> = phf_map! {
+    
+};
+
+static CLIENT_WS_COMMAND_STRINGS: phf::Map<&'static str, ClientWSCommand> = phf_map! {
+    "Log" => ClientWSCommand::Log(None)
+};
+
 impl ServerWSCommand {
+    // pub fn from_str(string: &str) -> Result<ServerWSCommand, ServerError> {
+    //     let command = if let Some((cmd_str, data)) = string.split_once(" ") {
+    //         let cmd = SERVER_WS_COMMAND_STRINGS.get(cmd_str).ok_or(anyhow!("Invalid command."))?;
+    //     } else {
+    //         SERVER_WS_COMMAND_STRINGS.get(string).ok_or(anyhow!("Invalid command."))?;
+    //     };
+    // }
     pub fn as_str(&self) -> &'static str {
         match self {
             ServerWSCommand::Update => "Update",
@@ -42,15 +60,35 @@ impl ServerWSCommand {
 }
 
 // commands issued by the client, directed at the server
+#[derive(Debug, Clone)]
 pub enum ClientWSCommand {
-    Response, Discord,
+    Log(Option<String>), 
+    Response(Option<String>), 
+    Discord(Option<String>),
+    None
 }
 
 impl ClientWSCommand {
+    pub fn new(string: &str) -> Result<Self, ServerError> {
+        if let Some((cmd_str, data)) = string.split_once(" ") {
+            let cmd = CLIENT_WS_COMMAND_STRINGS.get(cmd_str).ok_or(anyhow!("Invalid command."))?;
+            match cmd {
+                ClientWSCommand::Log(None)      => Ok(ClientWSCommand::Log(Some(data.to_string()))),
+                ClientWSCommand::Response(None) => Ok(ClientWSCommand::Response(Some(data.to_string()))),
+                ClientWSCommand::Discord(None)  => Ok(ClientWSCommand::Discord(Some(data.to_string()))),
+                _ => Ok(ClientWSCommand::None)
+            }
+        } else {
+            let cmd = CLIENT_WS_COMMAND_STRINGS.get(string).ok_or(anyhow!("Invalid command."))?;
+            Ok(cmd.clone())
+        }
+    }
     pub fn as_str(&self) -> &'static str {
         match self {
-            ClientWSCommand::Response => "Response",
-            ClientWSCommand::Discord => "Discord",
+            ClientWSCommand::Log(_)      => "Log",
+            ClientWSCommand::Response(_) => "Response",
+            ClientWSCommand::Discord(_)  => "Discord",
+            _ => "None"
         }
     }
 }
@@ -90,11 +128,11 @@ async fn websocket(
 
 // handle incoming websocket connections by storing them in the local state
 // todo
-async fn websocket_handle(mut socket: WebSocket, client: Client, state: Arc<AppState>) {
-    let (mut sender, mut receiver) = socket.split();
+async fn websocket_handle(socket: WebSocket, client: Client, state: Arc<AppState>) {
+    let (sender, receiver) = socket.split();
     let message_queue: Arc<Mutex<VecDeque<Message>>> = Arc::new(Mutex::new(VecDeque::new()));
     let client_id = *client.id();
-    let thread_handle = tokio::spawn(handle_client(client_id, receiver, message_queue.clone()));
+    let thread_handle = tokio::spawn(handle_client(client_id, receiver, state.clone()));
     let active = ActiveClient {
         sender,
         client,
@@ -106,17 +144,40 @@ async fn websocket_handle(mut socket: WebSocket, client: Client, state: Arc<AppS
     state.active_clients.lock().await.insert(client_id, active);
 }
 
-async fn handle_client(id: i64, mut receiver: SplitStream<WebSocket>, 
-                       message_queue: Arc<Mutex<VecDeque<Message>>>) {
+/// Tokio task for each active client to receive incoming ws messages.
+async fn handle_client(id: i64, mut receiver: SplitStream<WebSocket>, state: Arc<AppState>) {
     while let Some(message) = receiver.next().await {
-        println!("{:?}", message);
         match message {
             Ok(msg) => {
-                if let Message::Close(_) = msg {
-                    return; // when this closes, we can safely close the thread
+                match msg {
+                    Message::Binary(_) => unimplemented!("Client Driver Unsupported"),
+                    Message::Text(text) => {
+                        let cmd = ClientWSCommand::new(&text).unwrap(); // TODO unwrap
+                        match cmd {
+                            ClientWSCommand::Log(log_message) => {
+                                let mut conn = state.pool.get().unwrap();
+                                NewClientLog {
+                                    client_id: id,
+                                    log_message: log_message.unwrap_or("-- no log body sent --".to_string())
+                                }
+                                    .insert_into(client_logs)
+                                    .execute(&mut conn)
+                                    .expect("Failed");
+                            }
+                            ClientWSCommand::Response(_) => {}
+                            ClientWSCommand::Discord(_) => {}
+                            ClientWSCommand::None => {}
+                        }
+                        // desired messages
+                    }
+
+                    Message::Ping(_) => {} // todo we should reply with a pong
+                    Message::Pong(_) => {} // safely ignore pong messages
+                    Message::Close(_) => return,
                 }
-                let mut queue = message_queue.lock().await;
-                queue.push_back(msg);
+                // handle different message types here
+                // let mut queue = message_queue.lock().await;
+                // queue.push_back(msg);
             }
             Err(e) => {
                 eprintln!("Error receiving message for client {}: {:?}", id, e);

@@ -83,9 +83,24 @@ pub async fn hx_response_middleware(request: Request<Body>, next: Next) -> Respo
 /// /
 async fn index() -> Markup {
     html! {
-        div class="container mx-auto px-4" {
-            h1 .text-center {
-                "Hello world!"
+        div class="w-full max-w-3xl h-96 p-4 bg-gray-900 text-white rounded-lg shadow-md border border-gray-700 overflow-auto"
+            id="terminal"
+            hx-get="/load-more"
+            hx-trigger="scroll"
+            hx-swap="beforeend"
+            hx-target="#terminal" {
+            div id="content" {
+                p { "Welcome to the server terminal!" }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                p { "Loading logs..." }
+                
             }
         }
     }

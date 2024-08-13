@@ -12,13 +12,13 @@ use crate::database::models::{ActiveClient, Client, MiniClient};
 
 pub fn router(state: Extension<Arc<AppState>>) -> Router {
     Router::new()
-        .route("/clients", get(clients_page))
-        .route("/clients/broadcast", post(clients_broadcast))
+        .route("/", get(clients_page))
+        .route("/broadcast", post(clients_broadcast))
         .layer(Extension(state))
 }
 
 async fn ws_broadcast(receiving_clients: &mut HashMap<i64, ActiveClient>,
-                      message: Message) -> Result<(), ServerError> {
+                      message:  Message) -> Result<(), ServerError> {
     for client in receiving_clients.values_mut() {
         let message = message.clone();
         client.sender.send(message).await?;

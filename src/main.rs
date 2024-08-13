@@ -17,6 +17,10 @@ const SERVER_ADDR: &str = "0.0.0.0:3000";
        current_draw,
        
    }
+   
+   client_logs {
+   
+   }
 
    .. other tables of history
 

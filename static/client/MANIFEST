@@ -1,5 +1,6 @@
-usr/bin/updater.lua 0.04
-usr/bin/app.lua 0.01
-usr/lib/rui.lua 0.01
-usr/lib/ws.lua 0.01
-usr/lib/commands.lua 0.01
+/usr/bin/updater.lua
+/usr/bin/netlog.lua
+/usr/bin/app.lua
+/usr/lib/rui.lua
+/usr/lib/ws.lua
+/usr/lib/commands.lua
