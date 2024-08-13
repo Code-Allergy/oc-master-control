@@ -4,7 +4,8 @@ FROM rust:latest as builder
 # Install necessary packages and set up the build environment
 RUN apt update && apt install -y \
     build-essential \
-    libpq-dev \
+    libpq-dev  \
+    pkg-config \
     libssl-dev
 
 # Create a new directory for the application

@@ -8,7 +8,9 @@ RUN apt-get update && apt-get upgrade -y && \
     nodejs \
     npm \
     curl \
-    gnupg
+    gnupg \
+    pkg-config \
+    libssl-dev
 
 # Install Rust and Cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
