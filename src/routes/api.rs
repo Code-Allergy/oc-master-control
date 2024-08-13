@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::ops::Deref;
 use std::sync::Arc;
 use crate::database::models::{ActiveClient, Client, NewClient, NewClientLog};
 use crate::{AppState};
@@ -35,7 +34,7 @@ pub enum ServerWSCommand {
 }
 
 static SERVER_WS_COMMAND_STRINGS: phf::Map<&'static str, ServerWSCommand> = phf_map! {
-    
+
 };
 
 static CLIENT_WS_COMMAND_STRINGS: phf::Map<&'static str, ClientWSCommand> = phf_map! {
@@ -62,10 +61,9 @@ impl ServerWSCommand {
 // commands issued by the client, directed at the server
 #[derive(Debug, Clone)]
 pub enum ClientWSCommand {
-    Log(Option<String>), 
-    Response(Option<String>), 
+    Log(Option<String>),
+    Response(Option<String>),
     Discord(Option<String>),
-    None
 }
 
 impl ClientWSCommand {
@@ -76,7 +74,7 @@ impl ClientWSCommand {
                 ClientWSCommand::Log(None)      => Ok(ClientWSCommand::Log(Some(data.to_string()))),
                 ClientWSCommand::Response(None) => Ok(ClientWSCommand::Response(Some(data.to_string()))),
                 ClientWSCommand::Discord(None)  => Ok(ClientWSCommand::Discord(Some(data.to_string()))),
-                _ => Ok(ClientWSCommand::None)
+                _ => Err(anyhow!("WTF").into()) // WTF as in how did we end up here! unreachable
             }
         } else {
             let cmd = CLIENT_WS_COMMAND_STRINGS.get(string).ok_or(anyhow!("Invalid command."))?;
@@ -126,8 +124,7 @@ async fn websocket(
     }
 }
 
-// handle incoming websocket connections by storing them in the local state
-// todo
+// handle incoming websocket connections by storing each socket in the local state
 async fn websocket_handle(socket: WebSocket, client: Client, state: Arc<AppState>) {
     let (sender, receiver) = socket.split();
     let message_queue: Arc<Mutex<VecDeque<Message>>> = Arc::new(Mutex::new(VecDeque::new()));
@@ -147,43 +144,41 @@ async fn websocket_handle(socket: WebSocket, client: Client, state: Arc<AppState
 /// Tokio task for each active client to receive incoming ws messages.
 async fn handle_client(id: i64, mut receiver: SplitStream<WebSocket>, state: Arc<AppState>) {
     while let Some(message) = receiver.next().await {
-        match message {
-            Ok(msg) => {
-                match msg {
-                    Message::Binary(_) => unimplemented!("Client Driver Unsupported"),
-                    Message::Text(text) => {
-                        let cmd = ClientWSCommand::new(&text).unwrap(); // TODO unwrap
-                        match cmd {
-                            ClientWSCommand::Log(log_message) => {
-                                let mut conn = state.pool.get().unwrap();
-                                NewClientLog {
-                                    client_id: id,
-                                    log_message: log_message.unwrap_or("-- no log body sent --".to_string())
-                                }
-                                    .insert_into(client_logs)
-                                    .execute(&mut conn)
-                                    .expect("Failed");
-                            }
-                            ClientWSCommand::Response(_) => {}
-                            ClientWSCommand::Discord(_) => {}
-                            ClientWSCommand::None => {}
-                        }
-                        // desired messages
-                    }
-
-                    Message::Ping(_) => {} // todo we should reply with a pong
-                    Message::Pong(_) => {} // safely ignore pong messages
-                    Message::Close(_) => return,
-                }
-                // handle different message types here
-                // let mut queue = message_queue.lock().await;
-                // queue.push_back(msg);
-            }
-            Err(e) => {
-                eprintln!("Error receiving message for client {}: {:?}", id, e);
-                break;
-            }
+        if let Err(e) = message {
+            eprintln!("Error receiving message for client {}: {:?}", id, e);
+            break;
         }
+        dbg!(&message);
+        match message.unwrap() {
+            Message::Text(text) => {
+                let cmd = ClientWSCommand::new(&text); // TODO unwrap
+                match cmd.unwrap() {
+                    ClientWSCommand::Log(log_message) => {
+                        let mut conn = state.pool.get().unwrap();
+                        NewClientLog {
+                            client_id: id,
+                            log_message: log_message.unwrap_or("-- no log body sent --".to_string())
+                        }
+                            .insert_into(client_logs)
+                            .execute(&mut conn)
+                            .expect("Failed");
+                    }
+                    ClientWSCommand::Response(_) => {}
+                    ClientWSCommand::Discord(text) => {
+                        let json_body = r#"{"name":"test","content":"test message"}"#;
+                        todo!()
+                    }
+                }
+                // desired messages
+            }
+            Message::Binary(_) => unimplemented!("Client Driver Unsupported"),
+            Message::Ping(_) => {} // todo we should reply with a pong
+            Message::Pong(_) => {} // safely ignore pong messages
+            Message::Close(_) => return,
+        }
+        // handle different message types here
+        // let mut queue = message_queue.lock().await;
+        // queue.push_back(msg);
     }
 }
 
